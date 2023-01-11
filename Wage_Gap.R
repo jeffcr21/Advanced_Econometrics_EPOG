@@ -19,3 +19,83 @@ library(outliers)
 ## Loading the data
 
 cpsgen <- read_csv("Assignment/cpsgen.csv")
+
+##Exploring the data
+
+summary(cpsgen)
+
+## It is clear that there are some outliers that need to be removed
+
+## Distribution of wages
+boxplot(cpsgen$hrwage, cpsgen$realhrwage) ## This shows the distribution WITH the outliers
+
+## We can also formally test the presence of outliers
+
+chisq.out.test(cpsgen$realhrwage)
+
+## Remove Outliers
+
+quartiles <- quantile(cpsgen$realhrwage, probs=c(.25, .75), na.rm = FALSE)
+IQR <- IQR(cpsgen$realhrwage)
+
+Lower <- quartiles[1] - 1.5*IQR
+Upper <- quartiles[2] + 1.5*IQR 
+
+cpsgen_no <- subset(cpsgen, cpsgen$realhrwage > Lower & cpsgen$realhrwage < Upper)
+
+## Now let's look at the distribution again
+boxplot(cpsgen_no$hrwage, cpsgen_no$realhrwage)
+
+## Now, to work with wage gap, we need to remove the independent workers and leave only the salaried
+
+unique(cpsgen_no$classwkr)
+
+cpsgen_no <- cpsgen_no %>% filter(
+  classwkr == 28 | classwkr == 21 | classwkr == 27 | classwkr == 24 | classwkr == 25
+)
+
+## Now we can calculate the wage gap in Illinois in 2000 and 2006 (This is just for descriptive purposes)
+
+## First, I will recode the sex variable
+
+cpsgen_no <- cpsgen_no %>% mutate(sex = (recode(sex, '2' = '0', '1' = '1')))
+
+wagegap <- function(data, x, y, z) {
+  wagegap <- data %>% {{filter}}(
+    sex == x &
+      year == y &
+      statefip == z) %>% 
+    {{summarise}}(mean(realhrwage, na.rm = TRUE)
+    )
+  return(wagegap)
+}
+
+wagegap(cpsgen_no, 0, 2000, 17) 
+wagegap(cpsgen_no, 1, 2000, 17)
+wagegap(cpsgen_no, 0, 2006, 17)
+wagegap(cpsgen_no, 1, 2006, 17)
+
+wagegap(cpsgen_no, 0, 2000, 17) - wagegap(cpsgen_no, 1, 2000, 17)
+wagegap(cpsgen_no, 0, 2006, 17) - wagegap(cpsgen_no, 1, 2006, 17)
+
+## Now we can start preparing the necessary conditions for a fist exploratory model
+
+## Create unique id
+
+cpsgen <- cpsgen %>% mutate(id = paste(serial, statefip, pernum, sep = ""), .before = year)
+
+## Treated: If Illinois == 1; Illinois == 17 in the state code classification
+
+cpsgen <- cpsgen %>% mutate(treated = ifelse(statefip == 17, 1, 0))
+
+#After. The implementation of the law was in 2003
+
+cpsgen <- cpsgen %>% mutate(after = ifelse(year > 2003, 1, 0))
+
+##Treated + post
+
+cpsgen <- cpsgen %>% mutate(post.treated = ifelse(treated == 1 & after == 1, 1, 0))
+
+##Treated + post + women
+
+cpsgen <- cpsgen %>% mutate(post.treated.fem = ifelse(treated == 1 & after == 1 & sex == 0, 1, 0))
