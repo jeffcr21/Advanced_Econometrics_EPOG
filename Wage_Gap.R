@@ -15,6 +15,7 @@ library(plm)
 library(readr)
 library(panelr)
 library(outliers)
+library(MatchIt)
 
 ## Loading the data
 
@@ -107,6 +108,35 @@ II <- cpsgen_no %>% filter(
   statefip == 17 | statefip == 18
 )
 
+boxplot(II$age, II$realhrwage, II$lnrwg)
+
 model1 <- lm(lnrwg ~ treated + after + sex + post.treated + post.treated.fem, data = II)
 
 summary(model1)
+
+## Question: Should I use lm or plm? **
+
+## Now we can try to create a new control sample using the matching score method
+
+## First we will check at the means of the independent variables that we are going to use
+
+t.test(cpsgen_no$age[cpsgen_no$treated == 1], cpsgen_no$age[cpsgen_no$treated == 0])
+
+t.test(cpsgen_no$race[cpsgen_no$treated == 1], cpsgen_no$race[cpsgen_no$treated == 0])
+
+ggplot(data = cpsgen_no, aes(x = realhrwage, y = ..density..)) +
+  geom_density(aes(color = as.factor(treated), fill = as.factor(treated)),
+                 position = "identity", bins = 30, alpha = 0.4)
+
+data_nomiss <- cpsgen_no %>% 
+  na.omit()
+
+data_nomiss$sex <- as.numeric(data_nomiss$sex)
+
+m1 <- matchit(treated ~ age + sex + race + marst + sch + classwkr + union, method = "nearest", data = data_nomiss)
+summary(m1)
+plot(m1, type = "jitter")
+m1data <- match.data(m1)
+
+t.test(m1data$lnrwg[m1data$treated == 1], m1data$lnrwg[m1data$treated == 0], paired = T)
+
