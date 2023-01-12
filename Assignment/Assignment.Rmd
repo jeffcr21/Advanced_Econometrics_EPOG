@@ -1,0 +1,17 @@
+---
+title: "Pay gap and wage transparency"
+subtitle: "The case of the US"
+author: "Jeff Rodriguez, Andjela Perovic, Manuel Valencia"
+date: "2023-01-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+# Descriptive Statistics
+
+# Results
