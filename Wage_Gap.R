@@ -18,7 +18,7 @@ library(outliers)
 
 ## Loading the data
 
-cpsgen <- read_csv("Assignment/cpsgen.csv")
+cpsgen <- read_csv("cpsgen.csv")
 
 ##Exploring the data
 
@@ -82,20 +82,31 @@ wagegap(cpsgen_no, 0, 2006, 17) - wagegap(cpsgen_no, 1, 2006, 17)
 
 ## Create unique id
 
-cpsgen <- cpsgen %>% mutate(id = paste(serial, statefip, pernum, sep = ""), .before = year)
+cpsgen_no <- cpsgen_no %>% mutate(id = paste(serial, statefip, pernum, sep = ""), .before = year)
 
 ## Treated: If Illinois == 1; Illinois == 17 in the state code classification
 
-cpsgen <- cpsgen %>% mutate(treated = ifelse(statefip == 17, 1, 0))
+cpsgen_no <- cpsgen_no %>% mutate(treated = ifelse(statefip == 17, 1, 0))
 
 #After. The implementation of the law was in 2003
 
-cpsgen <- cpsgen %>% mutate(after = ifelse(year > 2003, 1, 0))
+cpsgen_no <- cpsgen_no %>% mutate(after = ifelse(year > 2003, 1, 0))
 
 ##Treated + post
 
-cpsgen <- cpsgen %>% mutate(post.treated = ifelse(treated == 1 & after == 1, 1, 0))
+cpsgen_no <- cpsgen_no %>% mutate(post.treated = ifelse(treated == 1 & after == 1, 1, 0))
 
 ##Treated + post + women
 
-cpsgen <- cpsgen %>% mutate(post.treated.fem = ifelse(treated == 1 & after == 1 & sex == 0, 1, 0))
+cpsgen_no <- cpsgen_no %>% mutate(post.treated.fem = ifelse(treated == 1 & after == 1 & sex == 0, 1, 0))
+
+## Now, to start we can compare Illinois to Indiana, which does NOT have any policy on pay transparency. They are
+## neighboring states and therefore might share some demographic characteristics. In any case, we can check that.
+
+II <- cpsgen_no %>% filter(
+  statefip == 17 | statefip == 18
+)
+
+model1 <- lm(lnrwg ~ treated + after + sex + post.treated + post.treated.fem, data = II)
+
+summary(model1)
