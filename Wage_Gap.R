@@ -21,7 +21,7 @@ library(MatchIt)
 
 cpsgen <- read_csv("cpsgen.csv")
 
-##Exploring the data
+# Data exploration --------------------------------------------------------
 
 summary(cpsgen)
 
@@ -55,6 +55,17 @@ cpsgen_no <- cpsgen_no %>% filter(
   classwkr == 28 | classwkr == 21 | classwkr == 27 | classwkr == 24 | classwkr == 25
 )
 
+## We need to recode education to create a dummy with +high school
+
+cpsgen_no <- cpsgen_no %>% mutate(hs = ifelse(sch >= 12, 1, 0))
+
+## And a variable of the age squared
+
+cpsgen_no <- cpsgen_no %>% mutate(age_squared = age^2)
+
+
+# Calculating the wage gap ------------------------------------------------
+
 ## Now we can calculate the wage gap in Illinois in 2000 and 2006 (This is just for descriptive purposes)
 
 ## First, I will recode the sex variable
@@ -78,6 +89,9 @@ wagegap(cpsgen_no, 1, 2006, 17)
 
 wagegap(cpsgen_no, 0, 2000, 17) - wagegap(cpsgen_no, 1, 2000, 17)
 wagegap(cpsgen_no, 0, 2006, 17) - wagegap(cpsgen_no, 1, 2006, 17)
+
+wagegap(cpsgen_no, 0, 2000, !17) - wagegap(cpsgen_no, 1, 2000, !17)
+wagegap(cpsgen_no, 0, 2006, !17) - wagegap(cpsgen_no, 1, 2006, !17)
 
 ## Now we can start preparing the necessary conditions for a fist exploratory model
 
@@ -110,11 +124,14 @@ II <- cpsgen_no %>% filter(
 
 boxplot(II$age, II$realhrwage, II$lnrwg)
 
-model1 <- lm(lnrwg ~ treated + after + sex + post.treated + post.treated.fem, data = II)
+model1 <- lm(lnrwg ~ treated + after + sex + post.treated + post.treated.fem + age + race + hrswork + ba + adv + ft,  data = II)
 
 summary(model1)
 
 ## Question: Should I use lm or plm? **
+
+
+# Matching Method ---------------------------------------------------------
 
 ## Now we can try to create a new control sample using the matching score method
 
@@ -133,10 +150,27 @@ data_nomiss <- cpsgen_no %>%
 
 data_nomiss$sex <- as.numeric(data_nomiss$sex)
 
-m1 <- matchit(treated ~ age + sex + race + marst + sch + classwkr + union, method = "nearest", data = data_nomiss)
+m1 <- matchit(treated ~ year + age + sex + race + marst + sch + classwkr + union, method = "nearest", data = data_nomiss)
 summary(m1)
-plot(m1, type = "jitter")
+# plot(m1, type = "jitter")
 m1data <- match.data(m1)
 
-t.test(m1data$lnrwg[m1data$treated == 1], m1data$lnrwg[m1data$treated == 0], paired = T)
+wagegap2 <- function(data, x, y, z) {
+  wagegap <- data %>% {{filter}}(
+    sex == x &
+      after == y &
+      treated == z) %>% 
+    {{summarise}}(mean(realhrwage, na.rm = TRUE)
+    )
+  return(wagegap)
+}
 
+wagegap2(m1data, 1, 1, 1)
+
+
+
+#t.test(m1data$lnrwg[m1data$treated == 1], m1data$lnrwg[m1data$treated == 0], paired = T)
+
+model_2 <- lm(lnrwg ~  treated + after + sex + post.treated + post.treated.fem, data = m1data)
+model_2
+summary(model_2)
