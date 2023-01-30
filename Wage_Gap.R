@@ -16,6 +16,8 @@ library(readr)
 library(panelr)
 library(outliers)
 library(MatchIt)
+library(stargazer)
+
 
 ## Loading the data
 
@@ -54,6 +56,8 @@ unique(cpsgen_no$classwkr)
 cpsgen_no <- cpsgen_no %>% filter(
   classwkr == 28 | classwkr == 21 | classwkr == 27 | classwkr == 24 | classwkr == 25
 )
+
+glimpse(cpsgen_no)
 
 ## We need to recode education to create a dummy with +high school
 
@@ -169,15 +173,45 @@ ggplot(data = II, aes(x = hrswork, y = ..density..)) +
   geom_density(aes(color = as.factor(treated), fill = as.factor(treated)),
                position = "identity", bins = 30, alpha = 0.4)
 
-## And then try a first model comparing Illinois and Indiana
+## Parallel trends
 
-model1 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem,  data = II)
+trend <- II %>% group_by(year, treated) %>% 
+  summarise(wage = mean(realhrwage))
 
-summary(model1)
+ggplot(data = trend, aes(x = year, y = wage)) +
+  geom_line(aes(color = as.factor(treated)),  size = 2) +
+  geom_vline(xintercept = 2003, linetype = "dotted", color = "blue", size = 1.5) +
+  labs(title = "Trends", x= "Year", y = "Real hour wage") +
+  scale_color_discrete(name = "Treated")
 
-model2 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + race + hrswork + ba + adv + ft,  data = II)
+trend2 <- II %>% group_by(year, treated) %>% 
+  summarise(wage = mean(lnrwg))
 
-summary(model2)
+ggplot(data = trend2, aes(x = year, y = wage)) +
+  geom_line(aes(color = as.factor(treated)),  size = 2) +
+  geom_vline(xintercept = 2003, linetype = "dotted", color = "blue", size = 1.5) +
+  labs(title = "Trends", x= "Year", y = "Real hour wage") +
+  scale_color_discrete(name = "Treated")
+
+## And then try a first model comparing Illinois and its neibouring states
+
+model1.1 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem,  data = II)
+
+summary(model1.1)
+
+model1.2 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + race + hrswork + ba + adv + ft,  data = II)
+
+summary(model1.2)
+
+## We can also test whether the policy had an effect on the number of hours worked:
+
+model1.3 <- lm(hrswork ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem,  data = II)
+
+summary(model1.3)
+
+model1.4 <- lm(hrswork ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + race + ba + adv + ft, data = II)
+
+summary(model1.4)
 
 # Matching Method ---------------------------------------------------------
 
@@ -215,16 +249,122 @@ wagegap2 <- function(data, x, y, z) {
 
 wagegap2(m1data, 1, 1, 1)
 
-
-
 #t.test(m1data$lnrwg[m1data$treated == 1], m1data$lnrwg[m1data$treated == 0], paired = T)
 
-model3 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem,  data = m1data)
+model2.1 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem,  data = m1data)
 
-summary(model3)
+summary(model2.1)
 
-model4 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + race + hrswork + ba + adv + ft,  data = m1data)
+model2.2 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + race + hrswork + ba + adv + ft,  data = m1data)
 
-summary(model4)
+summary(model2.2)
 
-stargazer(model1, model2, model3, model4, type = "text")
+stargazer(model1.1, model1.2, model2.1, model2.2, type = "text")
+
+#Test the effect on the number of hours worked
+
+model2.3 <- lm(hrswork ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem,  data = m1data)
+
+summary(model2.3)
+
+model2.4 <- lm(hrswork ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + race + ba + adv + ft,  data = m1data)
+
+summary(model2.4)
+
+stargazer(model1.3, model1.4, model2.3, model2.4, type = "text")
+
+
+# Synthetic control -------------------------------------------------------
+
+library(Synth)
+library(tidysynth)
+
+synt <- cpsgen_no %>% group_by(year, fem, statefip)
+
+synt <- synt %>% summarise(
+  age = mean(age),
+  realwage = mean(realhrwage),
+  edu = mean(sch),
+  hrswork = mean(hrswork),
+  lnrwg = mean(lnrwg)
+)
+
+synt1 <- synt %>% filter(fem == 0)
+synt2 <- synt %>% filter(fem == 1)
+
+wgap <- synt1$realwage - synt2$realwage
+
+synt2$wgap <- wgap
+
+synt2 <- synt2[-2]
+
+synt2 <- synt2 %>% mutate(
+  treated = ifelse(statefip == 17, 1, 0),
+  post = ifelse(year > 2003, 1, 0)
+)
+
+synt2 <- synt2 %>% mutate(
+  post.treated = ifelse(treated == 1 & post == 1, 1, 0)
+)
+
+synt2$statefip <- as.integer(synt2$statefip)
+
+dataprep.out <- dataprep(foo = synt2,
+         predictors = c("age", "edu", "lnrwg"),
+         dependent = "wgap",
+         unit.variable = "statefip",
+         time.variable = "year",
+         treatment.identifier = 17,
+         controls.identifier = c(1:16, 18:56),
+         time.predictors.prior = c(2000:2003),
+         time.optimize.ssr = c(2000:2006),
+         time.plot = c(2000-2006)
+         )
+
+synt.out <- synt2 %>% 
+  synthetic_control(
+    outcome = wgap,
+    unit = statefip,
+    time = year,
+    i_unit = 17,
+    i_time = 2003,
+    generate_placebos = F
+    ) %>% 
+  generate_predictor(
+    time_window = 2000:2003,
+    age = mean(age, na.rm = T),
+    edu = mean(edu, na.rm = T),
+    lnrwg = mean(lnrwg, na.rm = T)
+  ) %>% 
+  generate_weights(optimization_window = 2000:2003,
+                   margin_ipop = .02,sigf_ipop = 7,bound_ipop = 6
+                   ) %>% 
+  generate_control()
+
+synt.out %>% plot_trends()
+
+synt.out %>% plot_differences()
+
+synt.out %>% grab_balance_table()
+
+synt.out %>% grab_signficance()
+
+synt.out %>% grab_outcome()
+
+
+## This is the trend for the wage gap in Illinois versus neighbor states
+
+synt2 <- synt2 %>% 
+  mutate(treated = ifelse(statefip == 17, 1, 0))
+
+trends2 <- synt2 %>% filter(statefip == 17 | statefip == 18 | statefip == 19 | statefip == 29 | statefip == 55) %>% 
+  group_by(year, treated) %>% 
+  summarise(realwage = mean(realwage),
+            lnrwg = mean(lnrwg),
+            wgap = mean(wgap))
+
+ggplot(data = trends2, aes(x = year, y = wgap)) +
+  geom_line(aes(color = as.factor(treated)),  size = 2) +
+  geom_vline(xintercept = 2003, linetype = "dotted", color = "blue", size = 1.5) +
+  labs(title = "Wage gap in Illinois and nighbour States", x= "Year", y = "Wage Gap (in US$)") +
+  scale_color_discrete(name = "Treated")
