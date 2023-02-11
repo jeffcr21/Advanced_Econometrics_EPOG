@@ -1,0 +1,118 @@
+---
+title: "Pay gap and wage transparency"
+subtitle: "The case of the US"
+author: "Jeff Rodriguez, Andjela Perovic, Manuel Valencia"
+date: "2023-01-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+```
+
+# Introduction
+
+# Literature Review
+
+# Empirical Strategy and Data
+
+In a first exploration of the data, we see that there are some outliers in the wage variable. Even if they can be managed by the log transformation of the variable, in some cases along this work we will work directly with the real hourly wage, so we need to remove those outliers. To do so, we follow rule of thumb that the values outside 1.5 times the Inter Quartile Range (IQR) above the 3rd quartile or 1.5 times IQR below the 1st quartile are outliers and therefore they are removed from the data.
+
+```{r}
+boxplot(cpsgen$realhrwage, cpsgen_no$realhrwage, names = c("With outiers", "Without outliers")) 
+```
+We also eliminate from the original data set those persons that were self-employed or under the category of unpaid family workers, since they should not be affected by the change in the regulation on pay transparency, which by nature affect salaried employees. Eliminating the outliers and the non-salaried workers, we end up with a dataset composed of 326552 individual observations.
+
+To test whether the pay transparency policy had an impact on the geneder gap, we take advantage of the variation in the gender gap in the treated state (i.e. Illinois), compared with the variation of the gender gap in non-treated states.
+
+In the first place, we run a simple comparison between Illinois and its neighboring states, all of which have never enacted pay transparency legislation.
+
+In the second moment, we create an artificial control using the Propensity Score Matching (PSM) method, and compare the change in log wages between the treated state and the artificial control.
+
+In both cases, to test the effect of the policy, we use a difference-in-difference-in-difference or triple difference (DDD) approach. According to Olden & Moen, the "triple difference estimator can be computed as the difference between two difference-in-differences estimators."
+
+Our main specification takes the form:
+
+$Y_{sit}=B_0+B_1(T)reated+B_2(P)ost+B_3(F)emale + B_4 T*P+ B_5T*F+B_6P*F+B_7T*P*F+\lambda+\epsilon_{sit}$
+
+Where $\lambda$ represents a set of controls and $\epsilon_{sit}$ represents the error term.
+
+# Results
+
+In the first place, we can plot the wage gap in Illinois from 2000 to 2006. We see that actually the wage gap is decreasing significantly, however, it started to decrease since before the implementation of the 2003 legislation, and actually it _increases_ in 2004 and 2006.
+
+```{r echo=FALSE}
+ggplotly(illinois)
+```
+
+The next chart shows the evolution of the wage gap in Illinois (treated = 1) and its neighboring states: Wisconsin, Iowa, Missouri, Indiana and Kentucky (treated = 0).
+
+```{r}
+i_n_plot
+```
+We can observe that the wage gap is reducing both in Illinois and in the neighboring states, without any significant observable change after the implementation of the policy. We formally test this hypothesis using a DDD regression on both wages and hours of work
+
+```{r, warning=FALSE}
+stargazer(model1.1, model1.2, model1.3, model1.4,
+          title = "Table 1: DDD using nighbouring states as control",
+          type = "text",
+          dep.var.labels = c("Log hourly wage", "Weekly hous of work"),
+          covariate.labels = c("Treated", "Post", "Female", "Post * Treated", "Treated * Female", "Post * female",
+                               "Post * Treated * Female", "Age", "Age squared", "Race", "Hours of work", "Bachelor degree", "Advanced degree", "Marital status", "Full-time worker"),
+          omit = c("Constant"))
+```
+
+Models 1 and 3 are the basic specifications of wage and hours worked for Illinois and the neighboring States, while model 2 and 4 include a series of control variables such as age, race, education, marital status, and full-time employment. In all cases, we observe that the variable of interest post * treated * female does not show any statistically significant effect.
+
+However, one possible explanation is that the control group is not good enough. The parallel trends assumption implies that to accurately measure the effect of the treatment using a difference-in-difference scenario requiere that the treatment and control groups to have a parallel trend in the dependent variable _before_ the treatment. From the visual inspection of Chart #2 we see a _similar_ previous trend, however it does not look to be exactly _parallel_. To add more precision, we can formally test the parallel trends assumption (fo this, we regress only on the before-treatment period):
+
+```{r, warning=FALSE}
+p_trends <- lm(lnrwg ~ year + year*treated, data = subset(II, post == 0))
+stargazer(p_trends, type = "text", dep.var.caption = "Log hourly wage", omit = c("Constant"))
+```
+
+We see that the coefficient of year*treated is different from 0, which means that the parallel trend assumption is violated and we need to find a better control group for our analysis.
+
+## Control group using Propensity Score Matching (PSM)
+
+One better alternative is to use the Propensity Score Matching (PSM) method to chose a control sample that resembles better the treated group in the observable characteristics that we are interested as covariates. We use the same population as in the previous example, that is, Illinois' neighboring States to create a "pool" out of which we will select the observations that better match out treated individuals. In our case, we will create a score based on age, sex, race, marital status, education and class of worker.
+
+We fist test for the parallel trend assumption. Chart #3 show that with the 
+
+```{r}
+psm_gap_chart +
+         labs(title = "Chart #3: Evolution of the wage gap in Illinois and the PSM control sample")
+```
+
+
+```{r, warning = FALSE}
+p_trends_psm <- lm(lnrwg ~ year + year*treated, data = subset(m1data, post == 0))
+stargazer(p_trends_psm, type = "text", dep.var.caption = "Log hourly wage", omit = c("Constant"))
+```
+
+## SAY SOMETHING ABOUT THIS
+
+Table 2 show the results of the DDD regression using the matched units as controls:
+
+```{r, warning=FALSE}
+stargazer(model2.1, model2.2, model2.3, model2.4,
+          title = "Table 2: DDD using PSM as control",
+          type = "text",
+          dep.var.labels = c("Log hourly wage", "Weekly hous of work"),
+          covariate.labels = c("Treated", "Post", "Female", "Post * Treated", "Treated * Female", "Post * female",
+                               "Post * Treated * Female", "Age", "Age squared", "Race", "Hours of work", "Bachelor degree", "Advanced degree", "Marital status", "Full-time worker"),
+          omit = c("Constant"))
+```
+
+In this case, we find a small negative effect of the policy on the hourly wage, but still no effect on the number of hours worked. The effect decreases and becomes less significant when we add the controls.
+
+This small negative effect should be relativized. Firstly, it is very unlikely that the policy itself han a negative effect on the pay gap. One possible explanation of the result is that we have very few observations after the treatment, which impacts the quality of the evaluation that we can make.
+
+Especially with policies related to pay transparency is is expected that the results will be seen long-term, since this changes do nos trigger any kind of mechanism allowing for an immediate revalorization of wages while only giving employees more tools to know their position on the pay scale.
+
+It is possible that other structural factors are at play. They could explain why pay gap has been decreasing steadily not only in Illinois, but also in the neighboring States that did not enact any kind of regulation on the matter; as well as the inconsistent trend we observe in Illinois after the adoption of the new law.
+
+```{r}
+rmarkdown::render("Assignment.Rmd", "html_document")
+```
+

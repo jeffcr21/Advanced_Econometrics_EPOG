@@ -17,6 +17,8 @@ library(panelr)
 library(outliers)
 library(MatchIt)
 library(stargazer)
+library(gridExtra)
+library(did)
 
 
 ## Loading the data
@@ -31,6 +33,8 @@ summary(cpsgen)
 
 ## Distribution of wages
 boxplot(cpsgen$hrwage, cpsgen$realhrwage) ## This shows the distribution WITH the outliers
+
+
 
 ## We can also formally test the presence of outliers
 
@@ -119,6 +123,10 @@ stargazer(gap_illi_2000_m1, gap_illi_2006_m1, type = "text")
 
 ## Not surprisingly, the regression gives the same results!
 
+## We can also test whether women work less hours that men
+
+lm(hrswork ~ fem, data = cpsgen_no)
+
 ## Now we can start preparing the necessary conditions for a fist exploratory model
 
 ## Create unique id
@@ -157,6 +165,8 @@ II <- cpsgen_no %>% filter(
   statefip == 17 | statefip == 18 | statefip == 19 | statefip == 29 | statefip == 55
 )
 
+II <- II %>% select(-c(educ99, union))
+
 ## We can test some characteristics of the data:
 
 t.test(II$age[II$treated == 1], II$age[II$treated == 0])
@@ -190,16 +200,16 @@ trend2 <- II %>% group_by(year, treated) %>%
 ggplot(data = trend2, aes(x = year, y = wage)) +
   geom_line(aes(color = as.factor(treated)),  size = 2) +
   geom_vline(xintercept = 2003, linetype = "dotted", color = "blue", size = 1.5) +
-  labs(title = "Trends", x= "Year", y = "Real hour wage") +
+  labs(title = "Trends", x= "Year", y = "Log of Real hour wage") +
   scale_color_discrete(name = "Treated")
 
-## And then try a first model comparing Illinois and its neibouring states
+## And then try a first model comparing Illinois and its neighboring states
 
 model1.1 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem,  data = II)
 
 summary(model1.1)
 
-model1.2 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + race + hrswork + ba + adv + ft,  data = II)
+model1.2 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + age_squared + race + hrswork + ba + adv + marst + ft,  data = II)
 
 summary(model1.2)
 
@@ -209,9 +219,17 @@ model1.3 <- lm(hrswork ~ treated + post + fem + post.treated + treated.fem + pos
 
 summary(model1.3)
 
-model1.4 <- lm(hrswork ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + race + ba + adv + ft, data = II)
+model1.4 <- lm(hrswork ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + age_squared + race + ba + adv + marst + ft, data = II)
 
 summary(model1.4)
+
+stargazer(model1.1, model1.3,
+          title = "DDD using nighbouring states as control",
+          type = "html",
+          dep.var.labels = c("Log jourly wage", "Weekly hous of work"),
+          covariate.labels = c("Treated", "Post", "Female", "Post * Treated", "Treated * Female", "Post * female", "Post * Treated * Female"),
+          out = "Table 1. html"
+          )
 
 # Matching Method ---------------------------------------------------------
 
@@ -223,18 +241,22 @@ t.test(cpsgen_no$age[cpsgen_no$treated == 1], cpsgen_no$age[cpsgen_no$treated ==
 
 t.test(cpsgen_no$race[cpsgen_no$treated == 1], cpsgen_no$race[cpsgen_no$treated == 0])
 
-ggplot(data = cpsgen_no, aes(x = realhrwage, y = ..density..)) +
+realwage_before <- ggplot(data = II, aes(x = realhrwage, y = ..density..)) +
   geom_density(aes(color = as.factor(treated), fill = as.factor(treated)),
-                 position = "identity", bins = 30, alpha = 0.4)
+                 position = "identity", alpha = 0.4)
 
-data_nomiss <- cpsgen_no %>% 
+age_before <- ggplot(data = II, aes(x = age, y = ..density..)) +
+  geom_density(aes(color = as.factor(treated), fill = as.factor(treated)),
+               position = "identity", alpha = 0.4)
+
+data_nomiss <- II %>% 
   na.omit()
 
 data_nomiss$fem <- as.numeric(data_nomiss$fem)
 
 m1 <- matchit(treated ~ year + age + fem + race + marst + sch + classwkr, method = "nearest", data = data_nomiss)
 summary(m1)
-# plot(m1, type = "jitter")
+
 m1data <- match.data(m1)
 
 wagegap2 <- function(data, x, y, z) {
@@ -249,13 +271,26 @@ wagegap2 <- function(data, x, y, z) {
 
 wagegap2(m1data, 1, 1, 1)
 
+t.test(m1data$age[m1data$treated == 1], m1data$age[m1data$treated == 0], paired = TRUE)
+
+t.test(m1data$fem[m1data$treated == 1], m1data$fem[m1data$treated == 0])
+
+
 #t.test(m1data$lnrwg[m1data$treated == 1], m1data$lnrwg[m1data$treated == 0], paired = T)
+
+realwage_after <- ggplot(data = m1data, aes(x = realhrwage, y = ..density..)) +
+  geom_density(aes(color = as.factor(treated), fill = as.factor(treated)),
+               position = "identity", alpha = 0.4)
+
+age_after <- ggplot(data = m1data, aes(x = age, y = ..count..)) +
+  geom_density(aes(color = as.factor(treated), fill = as.factor(treated)),
+               position = "identity", alpha = 0.4)
 
 model2.1 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem,  data = m1data)
 
 summary(model2.1)
 
-model2.2 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + race + hrswork + ba + adv + ft,  data = m1data)
+model2.2 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + age_squared + race + hrswork + ba + adv + marst + ft,  data = m1data)
 
 summary(model2.2)
 
@@ -267,11 +302,19 @@ model2.3 <- lm(hrswork ~ treated + post + fem + post.treated + treated.fem + pos
 
 summary(model2.3)
 
-model2.4 <- lm(hrswork ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + race + ba + adv + ft,  data = m1data)
+model2.4 <- lm(hrswork ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + age_squared + race + ba + adv + marst + ft,  data = m1data)
 
 summary(model2.4)
 
 stargazer(model1.3, model1.4, model2.3, model2.4, type = "text")
+
+stargazer(model2.1, model2.3,
+          title = "DDD with PSM",
+          type = "html",
+          dep.var.labels = c("Log jourly wage", "Weekly hous of work"),
+          covariate.labels = c("Treated", "Post", "Female", "Post * Treated", "Treated * Female", "Post * female", "Post * Treated * Female"),
+          out = "Table 2. html"
+)
 
 
 # Synthetic control -------------------------------------------------------
@@ -345,12 +388,21 @@ synt.out %>% plot_trends()
 
 synt.out %>% plot_differences()
 
+synt.out %>% plot_weights()
+
 synt.out %>% grab_balance_table()
 
-synt.out %>% grab_signficance()
+synt.out %>% grab_significance()
 
 synt.out %>% grab_outcome()
 
+synt.out %>% grab_balance_table()
+
+synt.out %>% grab_outcome()
+
+synt.out %>% grab_predictor_weights()
+
+synt.control <- synt.out %>% grab_synthetic_control()
 
 ## This is the trend for the wage gap in Illinois versus neighbor states
 
@@ -363,8 +415,54 @@ trends2 <- synt2 %>% filter(statefip == 17 | statefip == 18 | statefip == 19 | s
             lnrwg = mean(lnrwg),
             wgap = mean(wgap))
 
-ggplot(data = trends2, aes(x = year, y = wgap)) +
+i_n_plot <- ggplot(data = trends2, aes(x = year, y = wgap)) +
   geom_line(aes(color = as.factor(treated)),  size = 2) +
   geom_vline(xintercept = 2003, linetype = "dotted", color = "blue", size = 1.5) +
-  labs(title = "Wage gap in Illinois and nighbour States", x= "Year", y = "Wage Gap (in US$)") +
+  labs(title = "Chart #2: Wage gap in Illinois and nighbouring States", x= "Year", y = "Wage Gap (in US$)") +
   scale_color_discrete(name = "Treated")
+
+t.test(synt.control$real_y[synt.control$time_unit > 2003], synt.control$synth_y[synt.control$time_unit > 2003])
+            
+## Wage Gap in Illinois
+
+library(plotly)
+
+illinois <- synt2 %>%  filter(statefip == 17) %>% 
+  group_by(year) %>% 
+  summarise(realwage = mean(realwage),
+            lnrwg = mean(lnrwg),
+            wgap = mean(wgap)) %>% 
+  ggplot(aes(x = year, y = wgap)) +
+  geom_line(size = 1.3, color = "#00AFBB") +
+  geom_vline(xintercept = 2003, linetype = "dotted", color = "blue", size = 1.5) +
+  labs(title = "Chart #1: Wage gap in Illinois 2000-2006", x= "Year", y = "Wage Gap (in US$)")
+
+
+ggplotly(illinois)
+
+
+## Plotting the wage gap in Illinois and PSM control
+
+psm_gap <- m1data %>% group_by(year, fem, treated)
+
+psm_gap <- psm_gap %>% summarise(
+  realwage = mean(realhrwage),
+  hrswork = mean(hrswork)
+)
+
+psm_gap1 <- psm_gap %>% filter(fem == 0)
+psm_gap2 <- psm_gap %>% filter(fem == 1)
+
+psmgap <- psm_gap1$realwage - psm_gap2$realwage
+
+psm_gap2$psmgap <- psmgap
+
+psm_gap2 <- psm_gap2[-2]
+
+psm_gap_chart <- ggplot(data = psm_gap2, aes(x = year, y = psmgap)) +
+  geom_line(aes(color = as.factor(treated)),  size = 2) +
+  geom_vline(xintercept = 2003, linetype = "dotted", color = "blue", size = 1.5) +
+  labs(x= "Year", y = "Wage Gap (in US$)") +
+  scale_color_discrete(name = "Treated")
+
+psm_gap_chart
