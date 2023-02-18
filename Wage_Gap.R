@@ -51,17 +51,17 @@ Upper <- quartiles[2] + 1.5*IQR
 cpsgen_no <- subset(cpsgen, cpsgen$realhrwage > Lower & cpsgen$realhrwage < Upper)
 
 ## Now let's look at the distribution again
-boxplot(cpsgen_no$hrwage, cpsgen_no$realhrwage)
+boxplot(cpsgen$realhrwage, cpsgen_no$realhrwage)
 
 ## Now, to work with wage gap, we need to remove the independent workers and leave only the salaried
 
-unique(cpsgen_no$classwkr)
+# unique(cpsgen_no$classwkr)
 
 cpsgen_no <- cpsgen_no %>% filter(
   classwkr == 28 | classwkr == 21 | classwkr == 27 | classwkr == 24 | classwkr == 25
 )
 
-glimpse(cpsgen_no)
+# glimpse(cpsgen_no)
 
 ## We need to recode education to create a dummy with +high school
 
@@ -129,10 +129,6 @@ lm(hrswork ~ fem, data = cpsgen_no)
 
 ## Now we can start preparing the necessary conditions for a fist exploratory model
 
-## Create unique id
-
-cpsgen_no <- cpsgen_no %>% mutate(id = paste(serial, statefip, pernum, sep = ""), .before = year)
-
 ## Treated: If Illinois == 1; Illinois == 17 in the state code classification
 
 cpsgen_no <- cpsgen_no %>% mutate(treated = ifelse(statefip == 17, 1, 0))
@@ -157,6 +153,9 @@ cpsgen_no <- cpsgen_no %>% mutate(treated.fem = ifelse(treated == 1 & fem == 1, 
 
 cpsgen_no <- cpsgen_no %>% mutate(post.treated.fem = ifelse(treated == 1 & post == 1 & fem == 1, 1, 0))
 
+
+# Illinois and neighboring states -----------------------------------------
+
 ## Now, to start we can compare Illinois to it's neighboring states (Wisconsin, Indiana, 
 ## Missoury and Iowa), which does NOT have any policy on pay transparency. They are
 ## neighboring states and therefore might share some demographic characteristics. In any case, we can check that.
@@ -176,8 +175,11 @@ ggplot(data = II, aes(x = realhrwage, y = ..density..)) +
                position = "identity", bins = 30, alpha = 0.4)
 
 ggplot(data = II, aes(x = age, y = ..density..)) +
-  geom_density(aes(color = as.factor(treated), fill = as.factor(treated)),
-               position = "identity", bins = 30, alpha = 0.4)
+  geom_density(aes(fill = as.factor(treated)),
+               position = "identity", alpha = 0.4) +
+  scale_fill_discrete(name = "State", labels = c("Neighbors", "Illinois")) +
+  labs(title = "Density funtion of age in Illinois and neghboring states", x = "Age", y = "Density") 
+
 
 ggplot(data = II, aes(x = hrswork, y = ..density..)) +
   geom_density(aes(color = as.factor(treated), fill = as.factor(treated)),
@@ -203,6 +205,12 @@ ggplot(data = trend2, aes(x = year, y = wage)) +
   labs(title = "Trends", x= "Year", y = "Log of Real hour wage") +
   scale_color_discrete(name = "Treated")
 
+p_trends <- lm(lnrwg ~ year + year*treated, data = subset(II, post == 0))     
+
+stargazer(p_trends, type = "html", dep.var.caption = "Log hourly wage", omit = c("Constant"),
+          title = "Table No. 2: Parallel trend",
+          out = "Table_PT_II.html")
+
 ## And then try a first model comparing Illinois and its neighboring states
 
 model1.1 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem,  data = II)
@@ -223,13 +231,36 @@ model1.4 <- lm(hrswork ~ treated + post + fem + post.treated + treated.fem + pos
 
 summary(model1.4)
 
-stargazer(model1.1, model1.3,
-          title = "DDD using nighbouring states as control",
+stargazer(model1.1, model1.2, model1.3, model1.4,
+          title = "DDD using nighboring states as control",
           type = "html",
-          dep.var.labels = c("Log jourly wage", "Weekly hous of work"),
-          covariate.labels = c("Treated", "Post", "Female", "Post * Treated", "Treated * Female", "Post * female", "Post * Treated * Female"),
+          dep.var.labels = c("Log hourly wage", "Weekly hours of work"),
+          covariate.labels = c("Treated", "Post", "Female", "Post * Treated", "Treated * Female", "Post * Female", "Post * Treated * Female", "Age", "Age Squared", "Race", "Hours of work", "Bachelor's Degree", "Advanced Degree", "Marital Status", "Full-time employment"),
+          omit = c("Constant"),
+          omit.stat = "all",
           out = "Table 1. html"
           )
+
+## Placebo test II
+
+placebo_data_II <- II %>% filter(
+  year < 2004
+)
+
+placebo_data_II <- placebo_data_II %>% mutate(
+  post = ifelse(year >= 2001, 1, 0),
+  post.treated = ifelse(post == 1 & treated == 1, 1, 0),
+  post.fem = ifelse(post == 1 & fem == 1, 1, 0),
+  post.treated.fem = ifelse(post == 1 & treated == 1 & fem == 1, 1, 0)
+)
+
+pla_II_model_1 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem,  data = placebo_data_II)
+
+pla_II_model_2 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + age_squared + race + hrswork + ba + adv + marst + ft,  data = placebo_data_II)
+
+summary(pla_II_model_1)
+
+summary(pla_II_model_2)
 
 # Matching Method ---------------------------------------------------------
 
@@ -241,20 +272,28 @@ t.test(cpsgen_no$age[cpsgen_no$treated == 1], cpsgen_no$age[cpsgen_no$treated ==
 
 t.test(cpsgen_no$race[cpsgen_no$treated == 1], cpsgen_no$race[cpsgen_no$treated == 0])
 
+t.test(cpsgen_no$sex[cpsgen_no$treated == 1], cpsgen_no$sex[cpsgen_no$treated == 0])
+
+t.test(cpsgen_no$marst[cpsgen_no$treated == 1], cpsgen_no$marst[cpsgen_no$treated == 0])
+
+t.test(cpsgen_no$sch[cpsgen_no$treated == 1], cpsgen_no$sch[cpsgen_no$treated == 0])
+
 realwage_before <- ggplot(data = II, aes(x = realhrwage, y = ..density..)) +
-  geom_density(aes(color = as.factor(treated), fill = as.factor(treated)),
+  geom_density(aes(fill = as.factor(treated)),
                  position = "identity", alpha = 0.4)
 
 age_before <- ggplot(data = II, aes(x = age, y = ..density..)) +
-  geom_density(aes(color = as.factor(treated), fill = as.factor(treated)),
+  geom_density(aes(fill = as.factor(treated)),
                position = "identity", alpha = 0.4)
 
-data_nomiss <- II %>% 
-  na.omit()
+data_nomiss <- cpsgen_no %>% 
+  filter(statefip == 17 | statefip == 18 | statefip == 19 | statefip == 29 | statefip == 55 | statefip == 21 | statefip == 05 | statefip == 47) %>%
+  select(-c(educ99, union)) %>% 
+  na.omit
 
 data_nomiss$fem <- as.numeric(data_nomiss$fem)
 
-m1 <- matchit(treated ~ year + age + fem + race + marst + sch + classwkr, method = "nearest", data = data_nomiss)
+m1 <- matchit(treated ~ year + age + fem + race + marst + sch + hrswork, method = "nearest", data = data_nomiss)
 summary(m1)
 
 m1data <- match.data(m1)
@@ -275,15 +314,22 @@ t.test(m1data$age[m1data$treated == 1], m1data$age[m1data$treated == 0], paired 
 
 t.test(m1data$fem[m1data$treated == 1], m1data$fem[m1data$treated == 0])
 
+t.test(m1data$race[m1data$treated == 1], m1data$race[m1data$treated == 0])
+
+t.test(m1data$marst[m1data$treated == 1], m1data$marst[m1data$treated == 0])
+
+t.test(m1data$sch[m1data$treated == 1], m1data$sch[m1data$treated == 0])
+
+
 
 #t.test(m1data$lnrwg[m1data$treated == 1], m1data$lnrwg[m1data$treated == 0], paired = T)
 
 realwage_after <- ggplot(data = m1data, aes(x = realhrwage, y = ..density..)) +
-  geom_density(aes(color = as.factor(treated), fill = as.factor(treated)),
+  geom_density(aes(color = fill = as.factor(treated)),
                position = "identity", alpha = 0.4)
 
 age_after <- ggplot(data = m1data, aes(x = age, y = ..count..)) +
-  geom_density(aes(color = as.factor(treated), fill = as.factor(treated)),
+  geom_density(aes(color = fill = as.factor(treated)),
                position = "identity", alpha = 0.4)
 
 model2.1 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem,  data = m1data)
@@ -308,13 +354,60 @@ summary(model2.4)
 
 stargazer(model1.3, model1.4, model2.3, model2.4, type = "text")
 
-stargazer(model2.1, model2.3,
-          title = "DDD with PSM",
+stargazer(model2.1, model2.2, model2.3, model2.4,
+          title = "DDD using PSM as control",
           type = "html",
-          dep.var.labels = c("Log jourly wage", "Weekly hous of work"),
-          covariate.labels = c("Treated", "Post", "Female", "Post * Treated", "Treated * Female", "Post * female", "Post * Treated * Female"),
+          dep.var.labels = c("Log hourly wage", "Weekly hours of work"),
+          covariate.labels = c("Treated", "Post", "Female", "Post * Treated", "Treated * Female", "Post * Female", "Post * Treated * Female", "Age", "Age Squared", "Race", "Hours of work", "Bachelor's Degree", "Advanced Degree", "Marital Status", "Full-time employment"),
+          omit = c("Constant"),
+          omit.stat = "all",
           out = "Table 2. html"
 )
+
+#Test of parallel trends
+
+p_trends_psm <- lm(lnrwg ~ year + year*treated, data = subset(m1data, post == 0))
+
+stargazer(p_trends_psm, type = "text", dep.var.caption = "Log hourly wage", omit = c("Constant"),
+          title = "Parallel trends in Illinois and PSM",
+          out = "p_trends_PSM.html")
+
+## Placebo test DDD PSM
+
+placebo_data <- m1data %>% filter(
+  year < 2004
+)
+
+placebo_data <- placebo_data %>% mutate(
+  post = ifelse(year >= 2001, 1, 0),
+  post.treated = ifelse(post == 1 & treated == 1, 1, 0),
+  post.fem = ifelse(post == 1 & fem == 1, 1, 0),
+  post.treated.fem = ifelse(post == 1 & treated == 1 & fem == 1, 1, 0)
+)
+
+pla_model_1 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem,  data = placebo_data)
+
+pla_model_2 <- lm(lnrwg ~ treated + post + fem + post.treated + treated.fem + post.fem + post.treated.fem + age + age_squared + race + hrswork + ba + adv + marst + ft,  data = placebo_data)
+
+summary(pla_model_1)
+
+summary(pla_model_2)
+
+stargazer(pla_II_model_1, pla_II_model_2,
+          title = "Placebo test for the neighbouring States",
+          dep.var.labels = c("Log hourly wage"),
+          covariate.labels = c("Treated", "Post", "Female", "Post * Treated", "Treated * Female", "Post * Female", "Post * Treated * Female", "Age", "Age squared", "Race", "Hours of work", "Bachelor Degree", "Advanced Degree", "Marital Status", "Full-time employee"),
+          omit = c("Constant"),
+          omit.stat = "all",
+          out = "Placebo_tests_II.html")
+
+stargazer(pla_model_1, pla_model_2,
+          title = "Placebo test for the PSM model",
+          dep.var.labels = c("Log hourly wage"),
+          covariate.labels = c("Treated", "Post", "Female", "Post * Treated", "Treated * Female", "Post * Female", "Post * Treated * Female", "Age", "Age squared", "Race", "Hours of work", "Bachelor Degree", "Advanced Degree", "Marital Status", "Full-time employee"),
+          omit = c("Constant"),
+          omit.stat = "all",
+          out = "Placebo_tests_PSM.html")
 
 
 # Synthetic control -------------------------------------------------------
@@ -422,7 +515,7 @@ i_n_plot <- ggplot(data = trends2, aes(x = year, y = wgap)) +
   scale_color_discrete(name = "Treated")
 
 t.test(synt.control$real_y[synt.control$time_unit > 2003], synt.control$synth_y[synt.control$time_unit > 2003])
-            
+
 ## Wage Gap in Illinois
 
 library(plotly)
@@ -466,3 +559,5 @@ psm_gap_chart <- ggplot(data = psm_gap2, aes(x = year, y = psmgap)) +
   scale_color_discrete(name = "Treated")
 
 psm_gap_chart
+
+# rmarkdown::render("Assignment.Rmd", "html_document")
